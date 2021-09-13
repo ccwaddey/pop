@@ -138,16 +138,17 @@ RB_GENERATE_STATIC(authnmtr, authssn, as_tree, authssncmp)
 int
 main(int argc, char *argv[]) {
 
+	/* printf("%s\n%s\n", argv[2], argv[3]); */
 	if ((tlsconf = tls_config_new()) == NULL)
 		errx(1, "tls_config_new: %s", tls_config_error(tlsconf));
 
 	if (tls_config_set_protocols(tlsconf, TLS_PROTOCOL_TLSv1_3))
 		errx(1, "tls_config_set_protocols: %s",
 		    tls_config_error(tlsconf));
-	if (tls_config_set_cert_file(tlsconf, argv[2]))
+	if (tls_config_set_cert_file(tlsconf, argv[1]))
 		errx(1, "tls_config_set_cert_file: %s",
 		    tls_config_error(tlsconf));
-	if (tls_config_set_key_file(tlsconf, argv[3]))
+	if (tls_config_set_key_file(tlsconf, argv[2]))
 		errx(1, "tls_config_set_key_file: %s",
 		    tls_config_error(tlsconf));
 	if ((maintls = tls_server()) == NULL)
@@ -222,6 +223,8 @@ readbuffertls(int fd, short event, void *arg) {
 			 * than io_buflen bytes into io_buf. */
 			if (iop->io_cb == NULL)
 				errx(1, "bad callback");
+			/* xundo */
+			/* printf("%s", iop->io_buf); */
 			iop->io_cb(iop);
 			return;
 		} else if (iop->io_bufoff < iop->io_buflen) {
@@ -609,6 +612,7 @@ handleusername(struct io *iop) {
 		sendresp(iop, S_OK, killssncb, "bye");
 		return;
 	}
+	
 	if (strncasecmp(iop->io_buf, "user", 4) != 0) {
 		sendresp(iop, S_ERR, greet2username,
 		    "expected user or quit command");
@@ -624,13 +628,14 @@ handleusername(struct io *iop) {
 		++cp;
 	*cp = '\0';
 	namelen = strlen(&iop->io_buf[5]);
-
+	/* printf("handleusername: %s, %zu\n", &iop->io_buf[5], namelen); */
+	/* fflush(stdout); */
 	iosp = iop->io_ssn;
 	if (cp == &iop->io_buf[iop->io_bufoff - 2]) {
 		/* user, sp, \r\n = 7 + 1 for the \0 */
 		rv = strlcpy(iosp->ios_ima.ima_userbuf, &iop->io_buf[5],
-		    namelen);
-		if (rv >= namelen)
+		    namelen + 1);
+		if (rv >= namelen + 1)
 			errx(1, "strlcpy in handleusername");
 	} else {
 		iosp->ios_ima.ima_prefail = 1;
@@ -742,10 +747,10 @@ handlenewuser(struct imsg *imp) {
 		sendresp(iop, S_ERR, killssncb, "bye");
 		return;
 	}
-	
+
 	/* Make sure no session already active, and some error checking. */
         strlcpy(myas.as_user, iosp->ios_ima.ima_userbuf, MAXARGLEN + 1);
-	if (!strncmp(imp->data, myas.as_user, MAXARGLEN + 1))
+	if (strncmp(imp->data, myas.as_user, MAXARGLEN + 1) != 0)
 		errx(1, "strings not equal");
 	if (RB_FIND(authnmtr, &authssnhead, &myas)) {
 		if (close(imp->fd))

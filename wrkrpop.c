@@ -113,8 +113,8 @@ static void imsgread(int, short, void *);
 static void parse_command(ssize_t, char *);
 static int getarg(size_t *, char *, ssize_t, int);
 
-/* argv[] has the following: 0-file name, 1-progname, 2-username,
- * 3-homedir, 4-uidstr, 5-gidstr, 6-descriptor, 7-mymaildir */
+/* argv[] has the following: 0-progname, 1-username,
+ * 2-homedir, 3-uidstr, 4-gidstr, 5-descriptor, 6-mymaildir */
 int
 main(int argc, char *argv[]) {
 	/* These will be read from the user file in the future. */
@@ -123,7 +123,7 @@ main(int argc, char *argv[]) {
 	gid_t	mygid = 1000, tmpg; /* From argv[5] */
 	char	chrootdir[PATH_MAX];
 
-	mysock = strtonum(argv[6], 3, INT_MAX, NULL);
+	mysock = strtonum(argv[5], 3, INT_MAX, NULL);
 	if (mysock == 0)
 		err(1, "strtonum");
 	if (dup2(mysock, 3) == -1)
@@ -135,18 +135,18 @@ main(int argc, char *argv[]) {
 		err(1, "fcntl");
 
 	/* Maybe have to add a /Maildir to argv[3] */
-	sz = strlcpy(chrootdir, argv[3], sizeof chrootdir);
+	sz = strlcpy(chrootdir, argv[2], sizeof chrootdir);
 	if (sz >= sizeof chrootdir)
 		errx(1, "strlcpy chrootdir");
-	sz = strlcat(chrootdir, argv[7], sizeof chrootdir);
+	sz = strlcat(chrootdir, argv[6], sizeof chrootdir);
 	if (sz >= sizeof chrootdir)
 		errx(1, "strlcat chrootdir");
 	if (chroot(chrootdir) || chdir("/"))
 		err(1, "chroot/chdir");
 
-	if ((tmpu = strtonum(argv[4], 1, UID_MAX, NULL)))
+	if ((tmpu = strtonum(argv[3], 1, UID_MAX, NULL)))
 		myuid = tmpu;
-	if ((tmpg = strtonum(argv[5], 1, GID_MAX, NULL)))
+	if ((tmpg = strtonum(argv[4], 1, GID_MAX, NULL)))
 		mygid = tmpg;
 	
 	if (setgroups(1, &mygid) || setresgid(mygid, mygid, mygid) ||
@@ -180,8 +180,7 @@ makedirs(void) {
 					err(1, "mkdir");
 			} else
 				err(1, "stat");
-		}
-		if (!S_ISDIR(sb.st_mode))
+		} else if (!S_ISDIR(sb.st_mode))
 			errx(1, "not in a maildir");
 	}
 }
@@ -1020,13 +1019,14 @@ imsgread(int fd, short event, void *arg) {
 
 static int
 getarg(size_t *mnump, char *cp, ssize_t len, int required) {
-	size_t	 n;
-	char	*numcp;
+	size_t	n, numlen;
+	char	numcp[LLMLEN];
 
 	if (len == 7 && !required) {
 		*mnump = 0;
 		return 0;
 	}
+
 	if (cp[4] != ' ')
 		return -1;
 
@@ -1034,12 +1034,19 @@ getarg(size_t *mnump, char *cp, ssize_t len, int required) {
 		*mnump = 0;
 		return 0;
 	}
-	numcp = &cp[5];
+
 	n = 5;
-	while (isdigit(cp[n]))
+	numlen = 0;
+	while (isdigit(cp[n])) {
 		++n;
-	if (n != len - 3 || !isdigit(cp[5]))
+		++numlen;
+	}
+
+	if (n != len - 3 || numlen == 0)
 		return -1;
+
+	memcpy(numcp, &cp[5], numlen);
+	numcp[numlen] = '\0';
 	if ((*mnump = strtonum(numcp, 1, LLONG_MAX, NULL)) == 0)
 		return -1;
 

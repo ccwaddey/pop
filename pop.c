@@ -51,8 +51,8 @@
 #define WRKRPOPFILE	"/home/me/pop/wrkrpop"
 
 char	*mymaildir = "";
-char	*certfile = "";
-char	*keyfile = "";
+char	*certfile = "/etc/ssl/turtle.bsdopener.domain.crt";
+char	*keyfile = "/etc/ssl/private/turtle.bsdopener.domain.key";
 
 enum {NOCHILD, YESCHILD};
 
