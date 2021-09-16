@@ -14,36 +14,18 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <sys/time.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <syslog.h>
 
-#include <event.h>
+extern unsigned int	debuglevel;
+extern int		daemonize;
 
-#define IOBUFLEN	1024
-
-#define MAXARGLEN	40
-/* This is "COMM" SP MAXARGLEN CRLF EXTRA. The extra byte is to know
- * if we have a malfunctioning client. Any input that long deserves a
- * termination */
-#define MAXINPUTLEN	(4 + 1 + MAXARGLEN + 2 + 1)
-
-enum {
-	APRT_NEW_CONN = 1,
-	APRT_NEW_USER,
-	WRKR_GOAHEAD,
-	WRKR_DATA,
-	WRKR_DATA_END,
-	WRKR_END,
-};
-
-enum {
-	S_OK,
-	S_ERR,
-	S_EMPTY,
-	S_NUMRS,
-};
-
-struct imsgauth {
-	uint8_t	ima_prefail;
-	char	ima_userbuf[MAXARGLEN + 1];
-	char	ima_passbuf[MAXARGLEN + 1];
-};
+void log_init(const char *);
+void lerrx(int e, const char *, ...);
+void lerr(int e, const char *, ...);
+void dlog(unsigned int, const char *fmt, ...);

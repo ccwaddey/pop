@@ -38,11 +38,12 @@
 #include <unistd.h>
 
 #include "imsgpop.h"
+#include "logutil.h"
 
 #define MAXDELERESP	(21)
 #define MAXSTATRESP	(26)
 #define MMUIDLLEN	(65) /* sha256 hash len */
-#define MAXRESPLEN	(IOBUFLEN - 2)
+#define MAXRESPLEN	(IOBUFLEN - 5)
 #define MAXTEMPLEN	(24)
 #define MAXUIDLLEN	(78)
 #define LLMLEN		(20) /* long long max digit length in base 10 */
@@ -121,28 +122,32 @@ main(int argc, char *argv[]) {
 	size_t	sz;
 	uid_t	myuid = 1000, tmpu; /* From argv[4] */
 	gid_t	mygid = 1000, tmpg; /* From argv[5] */
-	char	chrootdir[PATH_MAX];
+	char	chrootdir[PATH_MAX], logid[8+40+1] = "wrkrpop ";
 
+	closelog(); /* Prob not necessary */
+	strlcat(logid, argv[1], sizeof logid);
+	log_init(logid);
+	dlog(1, "entering main");
 	mysock = strtonum(argv[5], 3, INT_MAX, NULL);
 	if (mysock == 0)
-		err(1, "strtonum");
+		lerr(1, "strtonum");
 	if (dup2(mysock, 3) == -1)
-		err(1, "dup2");
+		lerr(1, "dup2");
 
 	mysock = 3;
 	closefrom(4);
 	if (fcntl(3, F_SETFL, O_NONBLOCK) == -1)
-		err(1, "fcntl");
+		lerr(1, "fcntl");
 
 	/* Maybe have to add a /Maildir to argv[3] */
 	sz = strlcpy(chrootdir, argv[2], sizeof chrootdir);
 	if (sz >= sizeof chrootdir)
-		errx(1, "strlcpy chrootdir");
+		lerrx(1, "strlcpy chrootdir");
 	sz = strlcat(chrootdir, argv[6], sizeof chrootdir);
 	if (sz >= sizeof chrootdir)
-		errx(1, "strlcat chrootdir");
+		lerrx(1, "strlcat chrootdir");
 	if (chroot(chrootdir) || chdir("/"))
-		err(1, "chroot/chdir");
+		lerr(1, "chroot/chdir");
 
 	if ((tmpu = strtonum(argv[3], 1, UID_MAX, NULL)))
 		myuid = tmpu;
@@ -151,7 +156,7 @@ main(int argc, char *argv[]) {
 	
 	if (setgroups(1, &mygid) || setresgid(mygid, mygid, mygid) ||
 	    setresuid(myuid, myuid, myuid))
-		err(1, "set{groups,res{g,u}id}");
+		lerr(1, "set{groups,res{g,u}id}");
 
 	makedirs();
 
@@ -177,11 +182,11 @@ makedirs(void) {
 		if (stat(dirs[i], &sb)) {
 			if (errno == ENOENT) {
 				if (mkdir(dirs[i], 0700))
-					err(1, "mkdir");
+					lerr(1, "mkdir");
 			} else
-				err(1, "stat");
+				lerr(1, "stat");
 		} else if (!S_ISDIR(sb.st_mode))
-			errx(1, "not in a maildir");
+			lerrx(1, "not in a maildir");
 	}
 }
 
@@ -218,7 +223,10 @@ redopopcache(FILE *fp, struct dirent **epp, int ne) {
 	size_t		 sz, bytes, cnlen, n;
 	int		 i, j, bblen, mdlen;
 
-	rewind(fp);
+	dlog(1, "entering redopopcache");
+	fflush(fp);
+	if (fseek(fp, 0, SEEK_SET))
+		lerr(1, "fseek");
 	/* We haven't written anything to the file so this shouldn't
 	 * cause any problems with buffering. */
 	ftruncate(fileno(fp), 0);
@@ -233,70 +241,71 @@ redopopcache(FILE *fp, struct dirent **epp, int ne) {
 		bytes = 0;
 		entp = epp[i];
 		if ((mmp = calloc(1, sizeof *mmp)) == NULL)
-			err(1, "calloc");
+			lerr(1, "calloc");
 		mmp->mm_num = i + 1;
 		/* Get file name for openname and mm_name. */
-		strcpy(openname, curname);
+		strlcpy(openname, curname, sizeof openname);
 		sz = strlcat(openname, entp->d_name, sizeof openname);
 		if (sz >= sizeof openname)
-			errx(1, "strlcat openname");
+			lerrx(1, "strlcat openname");
 		sz = strlcpy(mmp->mm_name, entp->d_name, sizeof mmp->mm_name);
 		if (sz >= sizeof mmp->mm_name)
-			errx(1, "strlcpy mm_name");
+			lerrx(1, "strlcpy mm_name");
 		/* Get canonname */
 		sz = strlcpy(canonname, entp->d_name, sizeof canonname);
 		if (sz >= sizeof canonname)
-			errx(1, "strlcpy canonname");
+			lerrx(1, "strlcpy canonname");
 		if ((cp = strchr(canonname, ':')) != NULL)
 			*cp = '\0';
 		cnlen = strlen(canonname);
 		/* Write filename plus " " */
-		if (fwrite(canonname, cnlen, 1, fp) != 1 ||
-		    fwrite(" ", 1, 1, fp) != 1)
-			err(1, "fwrite");
+		if (fwrite(canonname, cnlen, 1, fp) != 1)
+			lerr(1, "fwrite canonname");
+		if (fwrite(" ", 1, 1, fp) != 1)
+			lerr(1, "fwrite space");
 		/* Get bytes */
 		if ((mailfp = fopen(openname, "r")) == NULL)
-			err(1, "fopen");
+			lerr(1, "fopen");
 		lp = NULL;
 		n = 0;
 		/* Is this a wildly inefficient way to count this? */
 		while ((len = getline(&lp, &n, mailfp)) != -1)
 			bytes += len + 1;
-		free(fp);
+		free(lp);
 		if (ferror(mailfp))
-			err(1, "getline");
+			lerr(1, "getline");
 		if (fclose(mailfp) == EOF)
-			err(1, "fclose");
+			lerr(1, "fclose");
 		/* Record bytes */
 		totbytes += bytes;
 		mmp->mm_bytes = bytes;
 		/* Write bytes plus " " */
 		bblen = snprintf(bytesbuf, sizeof bytesbuf, "%zu ", bytes);
 		if (bblen < 0 || bblen >= sizeof bytesbuf)
-			errx(1, "snprintf");
+			lerrx(1, "snprintf");
 		if (fwrite(bytesbuf, bblen, 1, fp) != 1)
-			err(1, "fwrite");
+			lerr(1, "fwrite");
 		/* Get uidl from hash of canonname */
 		EVP_DigestInit_ex(emcp, EVP_sha256(), NULL);
 		EVP_DigestUpdate(emcp, canonname, cnlen);
 		EVP_DigestFinal_ex(emcp, uidlmd, &mdlen);
 		if (mdlen != 32)
-			errx(1, "EVP_DigestFinal_ex");
+			lerrx(1, "EVP_DigestFinal_ex");
 		for (j = 0; j < mdlen; ++j) {
 			if (snprintf(&uidl[2*j], 3, "%02x", uidlmd[j]) != 2)
-				errx(1, "snprintf uidl");
+				lerrx(1, "snprintf uidl");
 		}
 		if (strnlen(uidl, sizeof uidl) != 64)
-			errx(1, "strnlen uidl");
+			lerrx(1, "strnlen uidl");
 		/* Write uidl and '\n' */
 		if (fwrite(uidl, 64, 1, fp) != 1 ||
 		    fwrite("\n", 1, 1, fp) != 1)
-			err(1, "fwrite");
+			lerr(1, "fwrite");
 		if (strlcpy(mmp->mm_uidl, uidl, 65) != 64)
-			errx(1, "strlcpy uidl");
+			lerrx(1, "strlcpy uidl");
 		/* Epilogue */
 		if (RB_INSERT(mmtr, &mmhd, mmp) != NULL)
-			errx(1, "duplicate RB_INSERT");
+			lerrx(1, "duplicate RB_INSERT");
 		EVP_MD_CTX_reset(emcp);
 	}
 	fflush(fp);
@@ -329,13 +338,13 @@ mmcomp(const struct dirent **app, const struct dirent **bpp) {
 
 	ap = *app;
 	if ((sz = strlcpy(anums, ap->d_name, NAME_MAX+1)) >= NAME_MAX+1)
-		errx(1, "name_max");
+		lerrx(1, "name_max");
 	cp = strchr(anums, '.');
 	if (cp != NULL)
 		*cp = '\0';
 	bp = *bpp;
 	if ((sz = strlcpy(bnums, bp->d_name, NAME_MAX+1)) >= NAME_MAX+1)
-		errx(1, "name_max");
+		lerrx(1, "name_max");
 	cp = strchr(bnums, '.');
 	if (cp != NULL)
 		*cp = '\0';
@@ -344,7 +353,7 @@ mmcomp(const struct dirent **app, const struct dirent **bpp) {
 	bnum = strtonum(bnums, 1, LLONG_MAX, NULL);
 	/* This should only happen if we have too big a number */
 	if (anum == 0 || bnum == 0)
-		errx(1, "bad mailmsg");
+		lerrx(1, "bad mailmsg");
 
 	if (anum < bnum)
 		return -1;
@@ -379,21 +388,22 @@ readpopcache(void) {
 	int		 fd, numents, ent, haserrs = 0;
 	char		*lp, *tp, *cp, newsrc[PATH_MAX], curdst[PATH_MAX];
 
+	dlog(1, "entering readpopcache");
 	/* Upon further review, this if/else block really just makes
 	 * sure that popcache is a regular file. */
 	if (stat("popcache", &pcsb)) {
 		if (errno != ENOENT)
-			err(1, "stat popcache");
+			lerr(1, "stat popcache");
 	} else {
 		if (!S_ISREG(pcsb.st_mode))
-			errx(1, "popcache not reg");
+			lerrx(1, "popcache not reg");
 	}
 	/* Open popcache (creating if necc) and get a lock on it) */
 	if ((fd = open("popcache", O_RDWR | O_CREAT | O_EXLOCK, 0640)) == -1)
-		err(1, "popcache open");
+		lerr(1, "popcache open");
 	/* Move all messages from new to cur */
 	if ((dp = opendir("new")) == NULL)
-		err(1, "opendir new");
+		lerr(1, "opendir new");
 	for (entp = readdir(dp); entp != NULL; entp = readdir(dp)) {
 		if (entp->d_type == DT_REG && entp->d_name[0] != '.') {
 			strcpy(newsrc, "new/");
@@ -401,19 +411,19 @@ readpopcache(void) {
 			szn = strlcat(newsrc, entp->d_name, PATH_MAX);
 			szu = strlcat(curdst, entp->d_name, PATH_MAX);
 			if (szn >= PATH_MAX || szu >= PATH_MAX)
-				errx(1, "strlcat");
+				lerrx(1, "strlcat");
 			if (rename(newsrc, curdst))
-				err(1, "rename");
+				lerr(1, "rename");
 		}
 	}
 	if (closedir(dp))
-		err(1, "closedir");
+		lerr(1, "closedir");
 	/* What next? We need to create the mailmsgtree (mmtree)
 	 * from popcache.*/
 	if ((numents = scandir("cur", &epp, mmsel, mmcomp)) == -1)
-		err(1, "scandir");
-	if ((fp = fdopen(fd, "r")) == NULL)
-		err(1, "fdopen");
+		lerr(1, "scandir");
+	if ((fp = fdopen(fd, "r+")) == NULL)
+		lerr(1, "fdopen");
 	lp = NULL;
 	n = ent = 0;
 	totbytes = totfiles = skipped = 0;
@@ -430,7 +440,7 @@ readpopcache(void) {
 			/* Consider this a real error b/c if we can't
 			 * alloc enough memory for the mailmsg's we're
 			 * screwed */
-			err(1, "calloc");
+			lerr(1, "calloc");
 		mmp->mm_num = ++totfiles;
 		if (ent >= numents) /* More entries in popcache than files */
 			goto err;
@@ -470,7 +480,7 @@ readpopcache(void) {
 
 		/* Add to the tree */
 		if (RB_INSERT(mmtr, &mmhd, mmp) != NULL)
-			errx(1, "RB_INSERT");
+			lerrx(1, "RB_INSERT");
 
 		continue;
 	err:
@@ -480,7 +490,7 @@ readpopcache(void) {
 	}
 	free(lp);
 	if (ferror(fp))
-		err(1, "ferror");
+		lerr(1, "ferror");
 	/* Make sure not more entries in dir than in popfile */
 	if (haserrs || totfiles != numents)
 		goto redo;
@@ -497,7 +507,7 @@ redo:
 done:
 	freeents(epp, numents);
 	if (fclose(fp) == EOF)
-		err(1, "fclose");
+		lerr(1, "fclose");
 	curfiles = totfiles;
 	curbytes = totbytes;
 	
@@ -512,11 +522,12 @@ statcmd(void) {
 	char	response[MAXSTATRESP];
 	size_t	rv;
 
+	dlog(1, "entering statcmd");
 	/* sendresp() in authpop adds the /r/n */
 	rv = snprintf(response, MAXSTATRESP, "+OK %zu %zu", curfiles,
 	    curbytes);
 	if (rv < 0 || rv >= MAXSTATRESP)
-		errx(1, "statcmd");
+		lerrx(1, "statcmd");
 	sendresp(response, recvcomm);
 	return;
 }
@@ -529,34 +540,35 @@ listcmd(size_t msgnum) {
 	char		*cp, response[MAXRESPLEN], temp[MAXTEMPLEN];
 	size_t		 sz, sor = sizeof response, sot = sizeof temp;
 
+	dlog(1, "entering listcmd %zu", msgnum);
 	if (msgnum) {
 		mymm.mm_num = msgnum;
 		if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
 			rv = sprintf(response, "-ERR no such msg");
 			if (rv < 0)
-				err(1, "listcmd sprintf");
+				lerr(1, "listcmd sprintf");
 			sendresp(response, recvcomm);
 			return;
 		}
 		if (msgnum != mmp->mm_num) /* paranoid... */
-			err(1, "fatal listcmd");
+			lerr(1, "fatal listcmd");
 		rv = snprintf(response, sor, "+OK %zu %zu",
 		    msgnum, mmp->mm_bytes);
 		if (rv < 0 || rv >= sor) /* also paranoid... */
-			err(1, "listcmd snprintf");
+			lerr(1, "listcmd snprintf");
 		sendresp(response, recvcomm);
 		return;
 	}
 	/* We need to send all the scan listings */
 	rv = sprintf(response, "+OK\r\n");
 	if (rv < 0)
-		err(1, "listcmd sprintf");
+		lerr(1, "listcmd sprintf");
 	cp = response + rv;
 	RB_FOREACH(mmp, mmtr, &mmhd) {
 		rv = snprintf(temp, sot, "%zu %zu\r\n", mmp->mm_num,
 		    mmp->mm_bytes);
 		if (rv < 0 || rv >= sot)
-			err(1, "listcmd snprintf");
+			lerr(1, "listcmd snprintf");
 		sz = strlcat(response, temp, sor);
 		if (sz >= sor) {
 			/* last crlf added in authpop */
@@ -564,7 +576,7 @@ listcmd(size_t msgnum) {
 			sendresp(response, NULL);
 			sz = strlcpy(response, temp, sor);
 			if (sz >= sor)
-				err(1, "listcmd strlcpy");
+				lerr(1, "listcmd strlcpy");
 		}
 		cp = response + sz;
 	}
@@ -594,30 +606,32 @@ retrcmd(size_t num) {
 	ssize_t		 len;
 	int		 rv;
 
+	dlog(1, "entering retrcmd %zu", num);
 	mymm.mm_num = num;
 	if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
 		rv = sprintf(response, "-ERR message not found");
 		if (rv < 0)
-			err(1, "retrcmd sprintf");
+			lerr(1, "retrcmd sprintf");
 		sendresp(response, recvcomm);
 		return;
 	}
 
 	dot[1] = '\0';
 	if (strlcat(openbuf, mmp->mm_name, sizeof openbuf) >= sizeof openbuf)
-		errx(1, "strlcat"); /* This really shouldn't happen */
+		lerrx(1, "strlcat"); /* This really shouldn't happen */
 	/* This will fail b/c we're not in cur (not anymore) */
 	if ((fp = fopen(openbuf, "r")) == NULL)
-		err(1, "fopen");
+		lerr(1, "fopen");
 	if ((rv = sprintf(response, "+OK\r\n")) < 0)
-		err(1, "retrcmd sprintf");
+		lerr(1, "retrcmd sprintf");
 	cp = response + rv;
 	lp = NULL;
 	n = 0;
 	while ((len = getline(&lp, &n, fp)) != -1) {
-		if (len >= MAXRESPLEN) {
+		/* Minus 2 b/c might have to add . and must add \r */
+		if (len >= MAXRESPLEN - 2) {
 			if ((rv = sprintf(response, "-ERR line too long")) < 0)
-				errx(1, "sprintf");
+				lerrx(1, "sprintf");
 			sendresp(response, recvcomm);
 			return;
 		}
@@ -636,13 +650,13 @@ retrcmd(size_t num) {
 			if (strlcpy(response, dot, sor) >= sor ||
 			    strlcat(response, lp, sor) >= sor ||
 			    (sz = strlcat(response, crlf, sor)) >= sor)
-				err(1, "fatal strlcpy"); 
+				lerr(1, "fatal strlcpy"); 
 		}
 		cp = response + sz;
 	}
 	free(lp);
 	if (ferror(fp))
-		err(1, "ferror");
+		lerr(1, "ferror");
 
 	/* We still have stuff in the response[]. See if we can add
 	 * the terminal "." */
@@ -654,7 +668,7 @@ retrcmd(size_t num) {
 	}
 	sendresp(response, recvcomm);
 	if (fclose(fp) == EOF)
-		err(1, "fclose");
+		lerr(1, "fclose");
 	mmp->mm_flags |= MM_SEEN;
 	return;
 }
@@ -665,10 +679,11 @@ delecmd(size_t num) {
 	char		 response[MAXDELERESP];
 	size_t		 sor = sizeof response;
 
+	dlog(1, "entering delecmd %zu", num);
 	mymm.mm_num = num;
 	if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
 		if (strlcpy(response, "-ERR no such message", sor) >= sor)
-			errx(1, "strlcpy");
+			lerrx(1, "strlcpy");
 		sendresp(response, recvcomm);
 		return;
 	}
@@ -677,10 +692,10 @@ delecmd(size_t num) {
 	curbytes -= mmp->mm_bytes;
 
 	if (RB_INSERT(mdtr, &mmdt, mmp) != NULL)
-		errx(1, "duplicate on RB_INSERT");
+		lerrx(1, "duplicate on RB_INSERT");
 
 	if (strlcpy(response, "+OK deleted", sor) >= sor)
-		errx(1, "strlcpy");
+		lerrx(1, "strlcpy");
 	sendresp(response, recvcomm);
 	return;
 }
@@ -688,6 +703,7 @@ delecmd(size_t num) {
 static void
 noopcmd(void) {
 	char	response[] = "+OK";
+	dlog(1, "entering noopcmd");
 	sendresp(response, recvcomm);
 	return;
 }
@@ -701,13 +717,13 @@ rsetcmd(void) {
 	/* 	mmp = SLIST_FIRST(&mmlh); */
 	/* 	SLIST_REMOVE_HEAD(&mmlh, next); */
 	/* 	if (RB_INSERT(mmtr, &mmhd, mmp) != NULL) */
-	/* 		errx(1, "RB_INSERT"); */
+	/* 		lerrx(1, "RB_INSERT"); */
 	/* } */
-
+	dlog(1, "entering rsetcmd");
 	RB_FOREACH_SAFE(mmp, mdtr, &mmdt, tmmp) {
 		RB_REMOVE(mdtr, &mmdt, mmp);
 		if (RB_INSERT(mmtr, &mmhd, mmp) != NULL)
-			errx(1, "duplicate on RB_INSERT");
+			lerrx(1, "duplicate on RB_INSERT");
 	}
 	curfiles = totfiles;
 	curbytes = totbytes;
@@ -723,41 +739,42 @@ uidlcmd(size_t msgnum) {
 	char		*cp, response[MAXRESPLEN], temp[MAXUIDLLEN];
 	size_t		 sz, sor = sizeof response, sot = sizeof temp;
 
+	dlog(1, "entering uidlcmd %zu", msgnum);
 	if (msgnum) {
 		mymm.mm_num = msgnum;
 		if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
 			rv = sprintf(response, "-ERR no such msg");
 			if (rv < 0)
-				err(1, "sprintf");
+				lerr(1, "sprintf");
 			sendresp(response, recvcomm);
 			return;
 		}
 		if (msgnum != mmp->mm_num) /* Paranoid */
-			err(1, "fatal uidl");
+			lerr(1, "fatal uidl");
 		rv = snprintf(response, sor, "+OK %zu %s", msgnum,
 		    mmp->mm_uidl);
 		if (rv < 0 || rv >= sor) /* also paranoid */
-			err(1, "uidl snprintf");
+			lerr(1, "uidl snprintf");
 		sendresp(response, recvcomm);
 		return;
 	}
 	/* Send all the UIDLs */
 	rv = sprintf(response, "+OK\r\n");
 	if (rv < 0)
-		err(1, "uidl sprintf");
+		lerr(1, "uidl sprintf");
 	cp = response + rv;
 	RB_FOREACH(mmp, mmtr, &mmhd) {
 		rv = snprintf(temp, sot, "%zu %s\r\n", mmp->mm_num,
 		    mmp->mm_uidl);
 		if (rv < 0 || rv >= sot)
-			err(1, "uidl snprintf");
+			lerr(1, "uidl snprintf");
 		sz = strlcat(response, temp, sor);
 		if (sz >= sor) {
 			*(cp - 2) = '\0';
 			sendresp(response, NULL);
 			sz = strlcpy(response, temp, sor);
 			if (sz >= sor)
-				err(1, "uidl strlcpy");
+				lerr(1, "uidl strlcpy");
 		}
 		cp = response + sz;
 	}
@@ -776,14 +793,14 @@ static void
 quitcmd(void) {
 	struct mailmsg	*mymmp, *svmmp, *dlmmp;
 	FILE		*fp;
-	char		*lp, *cp, *tp, unbuf[PATH_MAX];
+	char		*lp, *tp, unbuf[PATH_MAX], cname[NAME_MAX+1];
 	char		 errmsg[] = "-ERR", allgood[] = "+OK bye";
 	ssize_t		 len;
 	long		 wpos, savepos;
-	size_t		 n, sz, numdels;
+	size_t		 n, sz;
 	int		 fd, needwr = 0;
 
-	numdels = totfiles - curfiles;
+	dlog(1, "entering quitcmd");
 	wpos = 0;
 	if ((fd = open("popcache", O_RDWR | O_EXLOCK)) == -1)
 		goto error;
@@ -796,16 +813,19 @@ quitcmd(void) {
 	lp = NULL;
 	while ((len = getline(&lp, &n, fp)) != -1) {
 		if (*lp == '#') {
+			if (!shrinkpc)
+				wpos += len;
 			needwr = 1;
 			continue;
 		}
 		if ((tp = strchr(lp, ' ')) == NULL)
-			errx(1, "file format");
-		*tp++ = '\0';
-		cp = tp;
+			lerrx(1, "file format");
+		*tp = '\0';
+		sz = strlcpy(cname, lp, sizeof cname);
+		*tp = ' ';
 		/* Check if the line is about the svmmp */
-		if (svmmp && strstr(svmmp->mm_name, lp) == svmmp->mm_name &&
-		    (strlen(svmmp->mm_name) == (sz = strlen(lp)) ||
+		if (svmmp && strstr(svmmp->mm_name, cname) == svmmp->mm_name &&
+		    ((strlen(svmmp->mm_name) == sz) ||
 		    svmmp->mm_name[sz] == ':')) {
 			mymmp = svmmp;
 			svmmp = RB_NEXT(mmtr, &mmhd, svmmp);
@@ -814,16 +834,18 @@ quitcmd(void) {
 				setseen(mymmp);
 			updtwr(fp, lp, len, needwr, &wpos);
 		} else if (dlmmp &&
-		    strstr(dlmmp->mm_name, lp) == dlmmp->mm_name &&
-		    (strlen(dlmmp->mm_name) == (sz = strlen(lp)) ||
+		    strstr(dlmmp->mm_name, cname) == dlmmp->mm_name &&
+		    ((strlen(dlmmp->mm_name) == sz) ||
 		    dlmmp->mm_name[sz] == ':')) {
+			needwr = 1;
 			mymmp = dlmmp;
 			dlmmp = RB_NEXT(mdtr, &mmdt, dlmmp);
 			if (!shrinkpc) {
+				/* does this update wpos? */
 				printpound(fp, &wpos, len);
 			}
-			strcpy(unbuf, "cur/");
-			if (strlcat(unbuf, dlmmp->mm_name, sizeof unbuf) >=
+			strlcpy(unbuf, "cur/", sizeof unbuf);
+			if (strlcat(unbuf, mymmp->mm_name, sizeof unbuf) >=
 			    sizeof unbuf)
 				goto error;
 			if (remove(unbuf))
@@ -850,18 +872,24 @@ quitcmd(void) {
 	if (ferror(fp))
 		goto error;
 
+	fflush(fp);
+	if (shrinkpc)
+		ftruncate(fd, wpos);
+
 	if (imsg_compose(&myimb, WRKR_END, 0, 0, -1, allgood, sizeof allgood)
 	    == -1)
-		err(1, "imsg_compose");
+		lerr(1, "imsg_compose");
 	if (imsg_flush(&myimb))
-		errx(1, "authpop died or error");
+		lerrx(1, "authpop died or error");
+	dlog(2, "quitcmd exiting 0");
 	exit(0);
 error:
 	if (imsg_compose(&myimb, WRKR_END, 0, 0, -1, errmsg, sizeof errmsg)
 	    == -1)
-		err(1, "imsg_compose");
+		lerr(1, "imsg_compose");
 	if (imsg_flush(&myimb))
-		err(1, "imsg_flush");
+		lerr(1, "imsg_flush");
+	dlog(2, "quitcmd exiting 1");
 	exit(1);
 }
 
@@ -869,6 +897,7 @@ static void
 updtwr(FILE *p, char *cp, ssize_t l, int needswr, long *wpos) {
 	long	curpos;
 
+	dlog(2, "entering updtwr");
 	if (!shrinkpc || !needswr) {
 		/* Update pointer for wfp */
 		*wpos += l;
@@ -876,16 +905,16 @@ updtwr(FILE *p, char *cp, ssize_t l, int needswr, long *wpos) {
 	}
 
 	if ((curpos = ftell(p)) == -1)
-		err(1, "ftell");
+		lerr(1, "ftell");
 	if (*wpos >= curpos)
-		errx(1, "wpos > old");
+		lerrx(1, "wpos > old");
 	if (fseek(p, *wpos, SEEK_SET))
-		err(1, "fseek");
+		lerr(1, "fseek");
 	if (fwrite(cp, l, 1, p) != 1)
-		err(1, "fwrite");
+		lerr(1, "fwrite");
 	*wpos += l;
 	if (fseek(p, curpos, SEEK_SET))
-		err(1, "fseek");
+		lerr(1, "fseek");
 }
 
 /* This is best effort. If anything fails, just return. */
@@ -896,7 +925,7 @@ setseen(struct mailmsg *mmp) {
 
 	if (strlcat(oldf, mmp->mm_name, sizeof oldf) >= sizeof oldf)
 		return;
-	strcpy(newf, oldf);
+	strlcpy(newf, oldf, sizeof newf);
 	if ((cp = strchr(oldf, ':')) != NULL) { /* Already have flags */
 		if (strchr(cp, 'S') != NULL) /* Already have S */
 			return;
@@ -917,14 +946,15 @@ printpound(FILE *fp, long *wpos, ssize_t l) {
 	long	curpos;
 
 	if ((curpos = ftell(fp)) == -1)
-		err(1, "ftell");
+		lerr(1, "ftell");
 	if (fseek(fp, *wpos, SEEK_SET))
-		err(1, "fseek");
+		lerr(1, "fseek");
 	if (fwrite("#", 1, 1, fp) != 1)
-		err(1, "fwrite");
+		lerr(1, "fwrite");
 	*wpos += l;
 	if (fseek(fp, curpos, SEEK_SET))
-		err(1, "fseek");
+		lerr(1, "fseek");
+	return;
 }
 
 /* This is done with blocking IO b/c what else do we need to do? */
@@ -933,9 +963,10 @@ sendresp(char *cp, void (*cb)(void)) {
 	size_t		cplen;
 	uint32_t	type;
 
+	dlog(1, "entering sendresp with%s callback", cb ? "" : "out");
 	cplen = strnlen(cp, MAXRESPLEN);
 	if (cplen >= MAXRESPLEN)
-		errx(1, "sendresp response too long");
+		lerrx(1, "sendresp response too long");
 	++cplen;
 
 	if (cb == NULL)
@@ -944,20 +975,21 @@ sendresp(char *cp, void (*cb)(void)) {
 		type = WRKR_DATA_END;
 		
 	if (imsg_compose(&myimb, type, 0, 0, -1, cp, cplen) == -1)
-		err(1, "imsg_compose");
+		lerr(1, "imsg_compose");
 
 	if (imsg_flush(&myimb))
-		errx(1, "authpop died or error");
+		lerrx(1, "authpop died or error");
 
 	if (cb == NULL)
 		return;
-	cb();
+	/* cb(); */
 }
 
 static void
 recvcomm(void) {
+	dlog(1, "entering recvcomm (event_add)");
 	if (event_add(&myev, NULL))
-		err(1, "event_add");
+		lerr(1, "event_add");
 	
 	return;
 }
@@ -971,6 +1003,7 @@ imsgread(int fd, short event, void *arg) {
 	struct imsg	myimsg;
 	ssize_t		n, datalen;
 
+	dlog(1, "entering imsgread");
 	/* Read in imsg's when the event says it's readable. Complete
 	 * every task necessary for each message before moving on to
 	 * the next. Because we are just handling responses from the
@@ -979,16 +1012,20 @@ imsgread(int fd, short event, void *arg) {
 	 * at the end of the function calls. */
 	if ((n = imsg_read(&myimb)) == -1) {
 		if (errno != EAGAIN)
-			err(1, "imsg_read");
+			lerr(1, "imsg_read");
 		recvcomm();
 		return;
 	}
-	if (n == 0)
+	if (n == 0) {
+		/* Had something to read but read nothing == authpop
+		 * closed the connection. */
+		dlog(1, "exiting 2 (timeout?)");
 		exit(2);
+	}
 
 	for (;;) {
 		if ((n = imsg_get(&myimb, &myimsg)) == -1)
-			err(1, "imsg_get");
+			lerr(1, "imsg_get");
 		if (n == 0)
 			break;
 
@@ -999,17 +1036,17 @@ imsgread(int fd, short event, void *arg) {
 			 * before we send to root from authpop. */
 		case WRKR_GOAHEAD:
 			if (receivedgoahead)
-				errx(1, "too many goaheads");
+				lerrx(1, "too many goaheads");
 			receivedgoahead = 1;
 			readpopcache();
 			break;
 		case WRKR_DATA:
 			if (!receivedgoahead)
-				errx(1, "data before goahead");
+				lerrx(1, "data before goahead");
 			parse_command(datalen, (char *)myimsg.data);
 			break;
 		default:
-			errx(1, "bad imsg type");
+			lerrx(1, "bad imsg type");
 			break;
 		}
 		imsg_free(&myimsg);
@@ -1020,7 +1057,7 @@ imsgread(int fd, short event, void *arg) {
 static int
 getarg(size_t *mnump, char *cp, ssize_t len, int required) {
 	size_t	n, numlen;
-	char	numcp[LLMLEN];
+	char	numcp[MAXARGLEN+1];
 
 	if (len == 7 && !required) {
 		*mnump = 0;
@@ -1037,7 +1074,7 @@ getarg(size_t *mnump, char *cp, ssize_t len, int required) {
 
 	n = 5;
 	numlen = 0;
-	while (isdigit(cp[n])) {
+	while (isdigit(cp[n]) && numlen <= MAXARGLEN) {
 		++n;
 		++numlen;
 	}
@@ -1057,12 +1094,13 @@ static void
 parse_command(ssize_t len, char *cp) {
 	size_t	 msgnum;
 
+	dlog(2, "entering parse_command");
 	/* len must be at least 7 because all commands are 4 bytes
 	 * followed by at least \r\n\0. Even if we do implement top in
 	 * the future, this requires two args so would also need more
 	 * than 7 bytes. */
-	if (len < 7 || len > MAXINPUTLEN) {
-		sendresp("-ERR command too short", recvcomm);
+	if (len < 7 || len > MAXINPUTLEN + 1) {
+		sendresp("-ERR bad command length", recvcomm);
 		return;
 	}
 
@@ -1110,7 +1148,7 @@ parse_command(ssize_t len, char *cp) {
 		return;
 	} else if (strncasecmp("rset", cp, 4) == 0) {
 		if (len != 7) {
-			sendresp("-ERR bad noop", recvcomm);
+			sendresp("-ERR bad rset", recvcomm);
 			return;
 		}
 		rsetcmd();
