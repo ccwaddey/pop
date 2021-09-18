@@ -566,7 +566,7 @@ wrkrimsgwrite(int fd, short event, void *arg) {
 	/* 	goto again; */
 	if (asp->as_flags & ASF_GOAHEAD) {
 		asp->as_flags &= ~ASF_GOAHEAD;
-		sendresp(iop, S_OK, recv2wrkr, "authenticated");
+		sendresp(iop, S_OK, recv2wrkr, "authenticated\r\n");
 		return;
 	}
 	event_set(&iop->io_ev, asp->as_wrkrsd, EV_READ, wrkrimsgread, iop);
@@ -624,7 +624,7 @@ sendresp(struct io *iop, int scode, void (*cb)(struct io *), const char *cp) {
 		lerrx(1, "scode"); /* true error */
 	iop->io_bufoff = 0;
 	iop->io_buflen = snprintf(iop->io_buf, sizeof iop->io_buf,
-	    "%s%s\r\n", rs[scode], cp);
+	    "%s%s", rs[scode], cp);
 	if (iop->io_buflen < 0 || iop->io_buflen >= sizeof iop->io_buf)
 		lerr(1, "sendresp snprintf"); /* true error */
 
@@ -715,7 +715,7 @@ handlenewconn(int sockd) {
 	/* iop->io_cb = &greet2username; */
 	iop->io_ssntype = IO_IOSSN;
 	iop->io_ssn = iosp;
-	sendresp(iop, S_OK, greet2username, "popd ready");
+	sendresp(iop, S_OK, greet2username, "popd ready\r\n");
 	return;
 err:
 	if (close(sockd)) /* no signals so a real error */
@@ -740,26 +740,26 @@ handleusername(struct io *iop) {
 	dlog(1, "entering handleusername");
 	/* "USER", sp, one char user name, crlf = 4+1+1+2 = 8*/
 	if (iop->io_bufoff < 8) {
-		sendresp(iop, S_ERR, greet2username, "command too short");
+		sendresp(iop, S_ERR, greet2username, "command too short\r\n");
 		return;
 	}
 	if (iop->io_buf[iop->io_bufoff - 1] != '\n' ||
 	    iop->io_buf[iop->io_bufoff - 2] != '\r') {
-		sendresp(iop, S_ERR, greet2username, "expected crlf to end");
+		sendresp(iop, S_ERR, greet2username, "expected crlf to end\r\n");
 		return;
 	}
 	if (strncasecmp(iop->io_buf, "quit", 4) == 0) {
-		sendresp(iop, S_OK, killssncb, "bye");
+		sendresp(iop, S_OK, killssncb, "bye\r\n");
 		return;
 	}
 	
 	if (strncasecmp(iop->io_buf, "user", 4) != 0) {
 		sendresp(iop, S_ERR, greet2username,
-		    "expected user or quit command");
+		    "expected user or quit command\r\n");
 		return;
 	}
 	if (iop->io_buf[4] != ' ') {
-		sendresp(iop, S_ERR, greet2username, "expected space");
+		sendresp(iop, S_ERR, greet2username, "expected space\r\n");
 		return;
 	}
 
@@ -783,7 +783,7 @@ handleusername(struct io *iop) {
 	}
 
 	/* Now set up next event */
-	sendresp(iop, S_OK, username2password, "continue with PASS command");
+	sendresp(iop, S_OK, username2password, "continue with PASS command\r\n");
 }
 
 static void
@@ -804,27 +804,27 @@ handlepassword(struct io *iop) {
 	dlog(1, "entering handlepassword");
 	if (iop->io_bufoff < 8) {
 		clearima(iop);
-		sendresp(iop, S_ERR, greet2username, "command too short");
+		sendresp(iop, S_ERR, greet2username, "command too short\r\n");
 		return;
 	}
 	if (iop->io_buf[iop->io_bufoff - 1] != '\n' ||
 	    iop->io_buf[iop->io_bufoff - 2] != '\r') {
 		clearima(iop);
-		sendresp(iop, S_ERR, greet2username, "expected crlf to end");
+		sendresp(iop, S_ERR, greet2username, "expected crlf to end\r\n");
 		return;
 	}
 	if (!strncasecmp(iop->io_buf, "quit", 4)) {
-		sendresp(iop, S_OK, killssncb, "bye");
+		sendresp(iop, S_OK, killssncb, "bye\r\n");
 		return;
 	}
 	if (strncasecmp(iop->io_buf, "pass", 4)) {
 		clearima(iop);
-		sendresp(iop, S_ERR, greet2username, "expected PASS command");
+		sendresp(iop, S_ERR, greet2username, "expected PASS command\r\n");
 		return;
 	}
 	if (iop->io_buf[4] != ' ') {
 		clearima(iop);
-		sendresp(iop, S_ERR, greet2username, "expected space");
+		sendresp(iop, S_ERR, greet2username, "expected space\r\n");
 		return;
 	}
 
@@ -888,7 +888,7 @@ handlenewuser(struct imsg *imp) {
 	/* The username and password didn't match, or some other error
 	 * happened */
 	if (imp->fd == -1) {
-		sendresp(iop, S_ERR, killssncb, "bye");
+		sendresp(iop, S_ERR, killssncb, "bye\r\n");
 		return;
 	}
 
@@ -899,7 +899,7 @@ handlenewuser(struct imsg *imp) {
 	if (RB_FIND(authnmtr, &authssnhead, &myas)) {
 		if (close(imp->fd))
 			lerr(1, "close");
-		sendresp(iop, S_ERR, killssncb, "could not acquire lock");
+		sendresp(iop, S_ERR, killssncb, "could not acquire lock\r\n");
 		return;
 	}
 

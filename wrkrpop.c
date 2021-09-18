@@ -40,12 +40,12 @@
 #include "imsgpop.h"
 #include "logutil.h"
 
-#define MAXDELERESP	(21)
-#define MAXSTATRESP	(26)
+#define MAXDELERESP	(25)
+#define MAXSTATRESP	(29)
 #define MMUIDLLEN	(65) /* sha256 hash len */
 #define MAXRESPLEN	(IOBUFLEN - 5)
 #define MAXTEMPLEN	(24)
-#define MAXUIDLLEN	(78)
+#define MAXUIDLLEN	(80)
 #define LLMLEN		(20) /* long long max digit length in base 10 */
 
 size_t	totbytes,
@@ -524,7 +524,7 @@ statcmd(void) {
 
 	dlog(1, "entering statcmd");
 	/* sendresp() in authpop adds the /r/n */
-	rv = snprintf(response, MAXSTATRESP, "+OK %zu %zu", curfiles,
+	rv = snprintf(response, MAXSTATRESP, "+OK %zu %zu\r\n", curfiles,
 	    curbytes);
 	if (rv < 0 || rv >= MAXSTATRESP)
 		lerrx(1, "statcmd");
@@ -544,7 +544,7 @@ listcmd(size_t msgnum) {
 	if (msgnum) {
 		mymm.mm_num = msgnum;
 		if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
-			rv = sprintf(response, "-ERR no such msg");
+			rv = sprintf(response, "-ERR no such msg\r\n");
 			if (rv < 0)
 				lerr(1, "listcmd sprintf");
 			sendresp(response, recvcomm);
@@ -552,7 +552,7 @@ listcmd(size_t msgnum) {
 		}
 		if (msgnum != mmp->mm_num) /* paranoid... */
 			lerr(1, "fatal listcmd");
-		rv = snprintf(response, sor, "+OK %zu %zu",
+		rv = snprintf(response, sor, "+OK %zu %zu\r\n",
 		    msgnum, mmp->mm_bytes);
 		if (rv < 0 || rv >= sor) /* also paranoid... */
 			lerr(1, "listcmd snprintf");
@@ -571,8 +571,8 @@ listcmd(size_t msgnum) {
 			lerr(1, "listcmd snprintf");
 		sz = strlcat(response, temp, sor);
 		if (sz >= sor) {
-			/* last crlf added in authpop */
-			*(cp - 2) = '\0';
+			/* last crlf added in authpop - Not anymore */
+			*cp = '\0';
 			sendresp(response, NULL);
 			sz = strlcpy(response, temp, sor);
 			if (sz >= sor)
@@ -582,14 +582,14 @@ listcmd(size_t msgnum) {
 	}
 	/* We have all the scan listings sent or in our
 	 * response[].  Try to add the terminating line (last
-	 * crlf is added in authpop). */
-	sz = strlcat(response, ".", sor);
+	 * crlf is added in authpop - not anymore). */
+	sz = strlcat(response, ".\r\n", sor);
 	if (sz >= sor) {
-		*(cp - 2) = '\0';
+		*cp = '\0';
 		sendresp(response, NULL);
 		/* This is unfortunately super inefficient,
 		 * but what can you do...*/
-		strcpy(response, ".");
+		strcpy(response, ".\r\n");
 	}
 	sendresp(response, recvcomm);
 	return;
@@ -601,22 +601,21 @@ retrcmd(size_t num) {
 	struct mailmsg	*mmp, mymm;
 	FILE		*fp;
 	char		*lp, *cp, openbuf[PATH_MAX] = "cur/";
-	char		 response[MAXRESPLEN], dot[2], crlf[] = "\r\n";
-	size_t		 n, sz, sor = sizeof response;
-	ssize_t		 len;
-	int		 rv;
+	char		 response[MAXRESPLEN];
+	size_t		 n, lpoff, sz, sor = sizeof response;
+	ssize_t		 len, mylen;
+	int		 rv, shouldbreak;
 
 	dlog(1, "entering retrcmd %zu", num);
 	mymm.mm_num = num;
 	if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
-		rv = sprintf(response, "-ERR message not found");
+		rv = sprintf(response, "-ERR message not found\r\n");
 		if (rv < 0)
 			lerr(1, "retrcmd sprintf");
 		sendresp(response, recvcomm);
 		return;
 	}
 
-	dot[1] = '\0';
 	if (strlcat(openbuf, mmp->mm_name, sizeof openbuf) >= sizeof openbuf)
 		lerrx(1, "strlcat"); /* This really shouldn't happen */
 	/* This will fail b/c we're not in cur (not anymore) */
@@ -628,31 +627,40 @@ retrcmd(size_t num) {
 	lp = NULL;
 	n = 0;
 	while ((len = getline(&lp, &n, fp)) != -1) {
-		/* Minus 2 b/c might have to add . and must add \r */
-		if (len >= MAXRESPLEN - 2) {
-			if ((rv = sprintf(response, "-ERR line too long")) < 0)
-				lerrx(1, "sprintf");
-			sendresp(response, recvcomm);
-			return;
+		/* First add the dot if necessary */
+		if (*lp == '.') { /* We need to add the '.' */
+			if (strlcat(response, ".", sor) >= sor) {
+				*cp = '\0'; /* Paranoid */
+				sendresp(response, NULL);
+				strlcpy(response, ".", sor);
+				cp = response + 1;
+			} else /* Added cleanly. */
+				++cp;
 		}
-		/* We expect all lines to be unix style, except maybe
-		 * the last */
-		if (lp[len - 1] == '\n')
-			lp[len - 1] = '\0';
-		dot[0] = '\0';
-		if (lp[0] == '.')
-			dot[0] = '.';
-		if (strlcat(response, dot, sor) >= sor ||
-		    strlcat(response, lp, sor) >= sor ||
-		    (sz = strlcat(response, crlf, sor)) >= sor) {
-			*(cp - 2) = '\0';
-			sendresp(response, NULL);
-			if (strlcpy(response, dot, sor) >= sor ||
-			    strlcat(response, lp, sor) >= sor ||
-			    (sz = strlcat(response, crlf, sor)) >= sor)
-				lerr(1, "fatal strlcpy"); 
+		lp[len-1] = '\0'; /* We'll deal with eol ourselves */
+		mylen = len - 1; /* len-1 b/c we'll add crlf at end */
+		lpoff = 0; /* how far are we in the line? */
+		shouldbreak = 0;
+		while (!shouldbreak) {
+			if ((sz = strlcat(response, &lp[lpoff], sor)) >= sor) {
+				/* How much did we actually write? */
+				lpoff += (&response[sor] - cp);
+				sendresp(response, NULL);
+				cp = response;
+				*response = '\0'; /* for strlcat */
+			} else { /* We wrote the rest of the line */
+				shouldbreak = 1;
+				cp = response + sz;
+				if (strlcat(response, "\r\n", sor) >= sor) {
+					*cp = '\0';
+					sendresp(response, NULL);
+					strlcpy(response, "\r\n", sor);
+					cp = response + 2;
+				} else /* Added cleanly */
+					cp += 2;
+			}
 		}
-		cp = response + sz;
+		/* Make sure there's something in response before looping */
 	}
 	free(lp);
 	if (ferror(fp))
@@ -660,11 +668,11 @@ retrcmd(size_t num) {
 
 	/* We still have stuff in the response[]. See if we can add
 	 * the terminal "." */
-	if ((sz = strlcat(response, ".", sor)) >= sor) {
+	if ((sz = strlcat(response, ".\r\n", sor)) >= sor) {
 		/* Dang it */
-		*(cp - 2) = '\0';
+		*cp = '\0';
 		sendresp(response, NULL);
-		strcpy(response, ".");
+		strcpy(response, ".\r\n");
 	}
 	sendresp(response, recvcomm);
 	if (fclose(fp) == EOF)
@@ -682,7 +690,7 @@ delecmd(size_t num) {
 	dlog(1, "entering delecmd %zu", num);
 	mymm.mm_num = num;
 	if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
-		if (strlcpy(response, "-ERR no such message", sor) >= sor)
+		if (strlcpy(response, "-ERR no such message\r\n", sor) >= sor)
 			lerrx(1, "strlcpy");
 		sendresp(response, recvcomm);
 		return;
@@ -694,7 +702,7 @@ delecmd(size_t num) {
 	if (RB_INSERT(mdtr, &mmdt, mmp) != NULL)
 		lerrx(1, "duplicate on RB_INSERT");
 
-	if (strlcpy(response, "+OK deleted", sor) >= sor)
+	if (strlcpy(response, "+OK deleted\r\n", sor) >= sor)
 		lerrx(1, "strlcpy");
 	sendresp(response, recvcomm);
 	return;
@@ -702,7 +710,7 @@ delecmd(size_t num) {
 
 static void
 noopcmd(void) {
-	char	response[] = "+OK";
+	char	response[] = "+OK\r\n";
 	dlog(1, "entering noopcmd");
 	sendresp(response, recvcomm);
 	return;
@@ -711,7 +719,7 @@ noopcmd(void) {
 static void
 rsetcmd(void) {
 	struct mailmsg	*mmp, *tmmp;
-	char		 response[] = "+OK";
+	char		 response[] = "+OK\r\n";
 
 	/* while (!SLIST_EMPTY(&mmlh)) { */
 	/* 	mmp = SLIST_FIRST(&mmlh); */
@@ -743,7 +751,7 @@ uidlcmd(size_t msgnum) {
 	if (msgnum) {
 		mymm.mm_num = msgnum;
 		if ((mmp = RB_FIND(mmtr, &mmhd, &mymm)) == NULL) {
-			rv = sprintf(response, "-ERR no such msg");
+			rv = sprintf(response, "-ERR no such msg\r\n");
 			if (rv < 0)
 				lerr(1, "sprintf");
 			sendresp(response, recvcomm);
@@ -751,7 +759,7 @@ uidlcmd(size_t msgnum) {
 		}
 		if (msgnum != mmp->mm_num) /* Paranoid */
 			lerr(1, "fatal uidl");
-		rv = snprintf(response, sor, "+OK %zu %s", msgnum,
+		rv = snprintf(response, sor, "+OK %zu %s\r\n", msgnum,
 		    mmp->mm_uidl);
 		if (rv < 0 || rv >= sor) /* also paranoid */
 			lerr(1, "uidl snprintf");
@@ -770,7 +778,7 @@ uidlcmd(size_t msgnum) {
 			lerr(1, "uidl snprintf");
 		sz = strlcat(response, temp, sor);
 		if (sz >= sor) {
-			*(cp - 2) = '\0';
+			*cp = '\0';
 			sendresp(response, NULL);
 			sz = strlcpy(response, temp, sor);
 			if (sz >= sor)
@@ -779,11 +787,11 @@ uidlcmd(size_t msgnum) {
 		cp = response + sz;
 	}
 
-	sz = strlcat(response, ".", sor);
+	sz = strlcat(response, ".\r\n", sor);
 	if (sz >= sor) {
-		*(cp - 2) = '\0';
+		*cp = '\0';
 		sendresp(response, NULL);
-		strcpy(response, ".");
+		strcpy(response, ".\r\n");
 	}
 	sendresp(response, recvcomm);
 	return;
@@ -794,7 +802,7 @@ quitcmd(void) {
 	struct mailmsg	*mymmp, *svmmp, *dlmmp;
 	FILE		*fp;
 	char		*lp, *tp, unbuf[PATH_MAX], cname[NAME_MAX+1];
-	char		 errmsg[] = "-ERR", allgood[] = "+OK bye";
+	char		 errmsg[] = "-ERR\r\n", allgood[] = "+OK bye\r\n";
 	ssize_t		 len;
 	long		 wpos, savepos;
 	size_t		 n, sz;
@@ -1100,75 +1108,75 @@ parse_command(ssize_t len, char *cp) {
 	 * the future, this requires two args so would also need more
 	 * than 7 bytes. */
 	if (len < 7 || len > MAXINPUTLEN + 1) {
-		sendresp("-ERR bad command length", recvcomm);
+		sendresp("-ERR bad command length\r\n", recvcomm);
 		return;
 	}
 
 	if (cp[len - 1] != '\0' ||
 	    cp[len - 2] != '\n' ||
 	    cp[len - 3] != '\r') {
-		sendresp("-ERR expected crlf to end", recvcomm);
+		sendresp("-ERR expected crlf to end\r\n", recvcomm);
 		return;
 	}
 
 	if (strncasecmp("stat", cp, 4) == 0) {
 		if (len != 7) {
-			sendresp("-ERR bad stat command", recvcomm);
+			sendresp("-ERR bad stat command\r\n", recvcomm);
 			return;
 		}
 		statcmd();
 		return;
 	} else if (strncasecmp("list", cp, 4) == 0) {
 		if (getarg(&msgnum, cp, len, 0)) {
-			sendresp("-ERR syntax", recvcomm);
+			sendresp("-ERR syntax\r\n", recvcomm);
 			return;
 		}
 		listcmd(msgnum);
 		return;
 	} else if (strncasecmp("retr", cp, 4) == 0) {
 		if (getarg(&msgnum, cp, len, 1) == -1) {
-			sendresp("-ERR syntax", recvcomm);
+			sendresp("-ERR syntax\r\n", recvcomm);
 			return;
 		}
 		retrcmd(msgnum);
 		return;
 	} else if (strncasecmp("dele", cp, 4) == 0) {
 		if (getarg(&msgnum, cp, len, 1) == -1) {
-			sendresp("-ERR syntax", recvcomm);
+			sendresp("-ERR syntax\r\n", recvcomm);
 			return;
 		}
 		delecmd(msgnum);
 		return;
 	} else if (strncasecmp("noop", cp, 4) == 0) {
 		if (len != 7) {
-			sendresp("-ERR bad noop", recvcomm);
+			sendresp("-ERR bad noop\r\n", recvcomm);
 			return;
 		}
 		noopcmd();
 		return;
 	} else if (strncasecmp("rset", cp, 4) == 0) {
 		if (len != 7) {
-			sendresp("-ERR bad rset", recvcomm);
+			sendresp("-ERR bad rset\r\n", recvcomm);
 			return;
 		}
 		rsetcmd();
 		return;
 	} else if (strncasecmp("uidl", cp, 4) == 0) {
 		if (getarg(&msgnum, cp, len, 0) == -1) {
-			sendresp("-ERR syntax", recvcomm);
+			sendresp("-ERR syntax\r\n", recvcomm);
 			return;
 		}
 		uidlcmd(msgnum);
 		return;
 	} else if (strncasecmp("quit", cp, 4) == 0) {
 		if (len != 7) {
-			sendresp("-ERR bad quit", recvcomm);
+			sendresp("-ERR bad quit\r\n", recvcomm);
 			return;
 		}
 		quitcmd();
 		return;
 	} else {
-		sendresp("-ERR unrecognized command", recvcomm);
+		sendresp("-ERR unrecognized command\r\n", recvcomm);
 		return;
 	}
 }
