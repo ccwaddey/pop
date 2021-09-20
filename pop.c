@@ -45,15 +45,15 @@
 
 /* #define MAXHASHLEN	65 */
 /* The following will be turned into options for customization */
-#define USERTAB		"/home/me/pop/testuser"
-#define AUTHTAB		"/home/me/pop/testauth"
-#define LSNRADDR	"192.168.0.9"
+char	usertab[PATH_MAX] = "/home/me/pop/testuser";
+char	authtab[PATH_MAX] = "/home/me/pop/testauth";
+char	addrname[50] = "192.168.0.9";
 #define AUTHPOPFILE	"/home/me/pop/authpop"
 #define WRKRPOPFILE	"/home/me/pop/wrkrpop"
 
-char	*mymaildir = "";
-char	*certfile = "/etc/ssl/turtle.bsdopener.domain.crt";
-char	*keyfile = "/etc/ssl/private/turtle.bsdopener.domain.key";
+char	mymaildir[NAME_MAX] = "";
+char	certfile[PATH_MAX] = "/etc/ssl/turtle.bsdopener.domain.crt";
+char	keyfile[PATH_MAX] = "/etc/ssl/private/turtle.bsdopener.domain.key";
 
 enum {NOCHILD, YESCHILD};
 
@@ -88,15 +88,60 @@ RB_GENERATE_STATIC(uncmp, usernode, entry, usercmp)
 
 int
 main(int argc, char *argv[]) {
-	int			set;
+	int			set, ch;
 	socklen_t		setl;
 	int			spv[2];
+	size_t			n;
 	struct sockaddr_in	lsnraddr;
 	struct sigaction	childsa;
 
+	setproctitle("[pop3d]");
 	log_init("popd");
 
 	dlog(1, "entering main");
+
+	/* flags that we want:
+	 *
+	 * -u usertable, -a authtable, -l lsnaddr, -c certfile, -k
+         * keyfile, -e maildirext */
+	while ((ch = getopt(argc, argv, "a:c:e:k:l:u:")) != -1) {
+		switch (ch) {
+		case 'a':
+			n = strlcpy(authtab, optarg, sizeof authtab);
+			if (n >= sizeof authtab)
+				lerrx(1, "authtab too long");
+			break;
+		case 'c':
+			n = strlcpy(certfile, optarg, sizeof certfile);
+			if (n >= sizeof certfile)
+				lerrx(1, "certfile too long");
+			break;
+		case 'e':
+			n = strlcpy(mymaildir, optarg, sizeof mymaildir);
+			if (n >= sizeof mymaildir)
+				lerrx(1, "maildir extension too long");
+			break;
+		case 'k':
+			n = strlcpy(keyfile, optarg, sizeof keyfile);
+			if (n >= sizeof keyfile)
+				lerrx(1, "keyfile too long");
+			break;
+		case 'l':
+			n = strlcpy(addrname, optarg, sizeof addrname);
+			if (n >= sizeof addrname)
+				lerrx(1, "addrname too long");
+			break;
+		case 'u':
+			n = strlcpy(usertab, optarg, sizeof usertab);
+			if (n >= sizeof usertab)
+				lerrx(1, "usertab too long");
+			break;
+		default:
+			lerrx(1, "unrecognized option");
+			break;
+		}
+	}
+
 	loadusers();
 	
 	/* This sig handling stuff gets removed on execs, because it
@@ -149,7 +194,7 @@ main(int argc, char *argv[]) {
 
 	lsnraddr.sin_family = AF_INET;
 	lsnraddr.sin_port = htons(995);
-	if (inet_pton(AF_INET, LSNRADDR, &lsnraddr.sin_addr) != 1)
+	if (inet_pton(AF_INET, addrname, &lsnraddr.sin_addr) != 1)
 		lerr(1, "inet_pton");
 
 	if (bind(lsnrsd, (struct sockaddr *)&lsnraddr, sizeof lsnraddr))
@@ -371,11 +416,11 @@ loadusers(void) {
 	/* Get shared locks on both files. If a program needs to
 	 * modify either file, it needs to get exclusive locks in this
 	 * order to avoid deadlocks. */
-	if ((pfd = open(AUTHTAB, O_RDONLY | O_SHLOCK)) == -1)
+	if ((pfd = open(authtab, O_RDONLY | O_SHLOCK)) == -1)
 		lerr(1, "open");
 	if ((pfp = fdopen(pfd, "r")) == NULL)
 		lerr(1, "fdopen");
-	if ((ufd = open(USERTAB, O_RDONLY | O_SHLOCK)) == -1)
+	if ((ufd = open(usertab, O_RDONLY | O_SHLOCK)) == -1)
 		lerr(1, "open");
 	if ((ufp = fdopen(ufd, "r")) == NULL)
 		lerr(1, "fdopen");

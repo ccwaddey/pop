@@ -13,4 +13,4 @@ tags:
 	etags wrkrpop.c authpop.c pop.c imsgpop.h logutil.h logutil.c
 
 wc:
-	wc *.[ch]
+	wc pop.c imsgpop.h logutil.h logutil.c authpop.c wrkrpop.c

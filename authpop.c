@@ -139,6 +139,7 @@ RB_GENERATE_STATIC(authnmtr, authssn, as_tree, authssncmp)
 
 int
 main(int argc, char *argv[]) {
+	setproctitle("[authpop]");
 	closelog(); /* Prob not necessary */
 	log_init("authpop");
 
