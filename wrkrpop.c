@@ -128,7 +128,7 @@ main(int argc, char *argv[]) {
 	strlcat(logid, argv[1], sizeof logid);
 	log_init(logid);
 	dlog(1, "entering main");
-	setproctitle("wrkrpop: %s", logid);
+	/* setproctitle("%s", logid); */
 	mysock = strtonum(argv[5], 3, INT_MAX, NULL);
 	if (mysock == 0)
 		lerr(1, "strtonum");

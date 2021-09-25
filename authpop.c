@@ -26,7 +26,9 @@
 #include <errno.h>
 #include <event.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <imsg.h>
+#include <pwd.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -139,7 +141,11 @@ RB_GENERATE_STATIC(authnmtr, authssn, as_tree, authssncmp)
 
 int
 main(int argc, char *argv[]) {
-	setproctitle("[authpop]");
+	struct passwd	*mypwd;
+	uid_t		 apuid;
+	gid_t		 apgid;
+
+	setproctitle(NULL);
 	closelog(); /* Prob not necessary */
 	log_init("authpop");
 
@@ -168,13 +174,22 @@ main(int argc, char *argv[]) {
 	if (fcntl(3, F_SETFL, O_NONBLOCK) == -1)
 		lerrx(1, "could not set nonblocking unix socket");
 	imsg_init(&rootimb, 3);
+	/* get info to change to a very restricted user here; need
+	 * lots of fds */
+	if ((mypwd = getpwnam("_pop3d")) == NULL)
+		lerr(1, "getpwnam");
+	apuid = mypwd->pw_uid;
+	apgid = mypwd->pw_gid;
+	explicit_bzero(mypwd, sizeof *mypwd);
 	/* Okay now the tls config is set, unneeded fds are closed,
 	 * and imsg_init is done. */
 	if (chroot("/var/empty"))
 		lerr(1, "chroot");
 	if (chdir("/"))
 		lerr(1, "chdir");
-	/* change to a very restricted user here; need lots of fds */
+	if (setgroups(1, &apgid) || setresgid(apgid, apgid, apgid) ||
+	    setresuid(apuid, apuid, apuid))
+		lerr(1, "set groups or gid or uid");
 	/* Pledge something here. We only need to read and write from
 	 * a unix socket and an internet socket. */
 	event_init();

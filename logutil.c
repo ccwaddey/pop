@@ -17,7 +17,7 @@
 #include "logutil.h"
 
 unsigned int	debuglevel = 10;
-int		daemonize = 0;
+int		daemonize = 1;
 
 void
 log_init(const char *cp) {

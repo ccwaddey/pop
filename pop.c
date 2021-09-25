@@ -95,16 +95,16 @@ main(int argc, char *argv[]) {
 	struct sockaddr_in	lsnraddr;
 	struct sigaction	childsa;
 
-	setproctitle("[pop3d]");
+	setproctitle(NULL);
+	
 	log_init("popd");
-
 	dlog(1, "entering main");
 
 	/* flags that we want:
 	 *
 	 * -u usertable, -a authtable, -l lsnaddr, -c certfile, -k
          * keyfile, -e maildirext */
-	while ((ch = getopt(argc, argv, "a:c:e:k:l:u:")) != -1) {
+	while ((ch = getopt(argc, argv, "a:c:de:k:l:u:v")) != -1) {
 		switch (ch) {
 		case 'a':
 			n = strlcpy(authtab, optarg, sizeof authtab);
@@ -115,6 +115,9 @@ main(int argc, char *argv[]) {
 			n = strlcpy(certfile, optarg, sizeof certfile);
 			if (n >= sizeof certfile)
 				lerrx(1, "certfile too long");
+			break;
+		case 'd':
+			daemonize = 0;
 			break;
 		case 'e':
 			n = strlcpy(mymaildir, optarg, sizeof mymaildir);
@@ -136,11 +139,23 @@ main(int argc, char *argv[]) {
 			if (n >= sizeof usertab)
 				lerrx(1, "usertab too long");
 			break;
+		case 'v':
+			++debuglevel;
+			break;
 		default:
 			lerrx(1, "unrecognized option");
 			break;
 		}
 	}
+
+	argc -= optind;
+	argv += optind;
+	
+	if (argc != 0 || *argv != NULL)
+		lerrx(1, "error processing args");
+
+	if (daemonize)
+		daemon(0, 0);
 
 	loadusers();
 	
@@ -207,6 +222,11 @@ main(int argc, char *argv[]) {
 		lerr(1, "event_add");
 
 	/* pledge something here, as well as exec pledge for wrkr */
+	/* if (unveil("", "")) */
+	/* 	lerr(1, "unveil"); */
+	/* if (pledge("stdio inet proc exec sendfd", */
+	/* 	"stdio rpath wpath cpath flock ps id")) */
+	/* 	lerr(1, "pledge"); */
 	dlog(1, "event_dispatch");
 	event_dispatch();
 }
