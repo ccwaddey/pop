@@ -21,7 +21,7 @@ int		daemonize = 1;
 
 void
 log_init(const char *cp) {
-	openlog(cp, LOG_PID | (daemonize ? 0 : LOG_PERROR), LOG_MAIL);
+	openlog(cp, LOG_PID | LOG_PERROR, LOG_MAIL);
 }
 
 void

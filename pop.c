@@ -222,11 +222,9 @@ main(int argc, char *argv[]) {
 		lerr(1, "event_add");
 
 	/* pledge something here, as well as exec pledge for wrkr */
-	/* if (unveil("", "")) */
-	/* 	lerr(1, "unveil"); */
-	/* if (pledge("stdio inet proc exec sendfd", */
-	/* 	"stdio rpath wpath cpath flock ps id")) */
-	/* 	lerr(1, "pledge"); */
+	if (pledge("stdio inet proc exec sendfd",
+	    "stdio rpath wpath cpath flock id unveil"))
+		lerr(1, "pledge");
 	dlog(1, "event_dispatch");
 	event_dispatch();
 }

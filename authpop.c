@@ -201,7 +201,7 @@ main(int argc, char *argv[]) {
 	dlog(1, "event_add (rootev persistent)");
 	if (event_add(&rootev, NULL) == -1)
 		lerr(1, "event_add");
-
+	pledge("stdio recvfd", NULL);
 	event_dispatch();
 }
 

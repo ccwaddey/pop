@@ -147,7 +147,7 @@ main(int argc, char *argv[]) {
 	sz = strlcat(chrootdir, argv[6], sizeof chrootdir);
 	if (sz >= sizeof chrootdir)
 		lerrx(1, "strlcat chrootdir");
-	if (chroot(chrootdir) || chdir("/"))
+	if (unveil(chrootdir, "rwc") || chdir(chrootdir))
 		lerr(1, "chroot/chdir");
 
 	if ((tmpu = strtonum(argv[3], 1, UID_MAX, NULL)))
@@ -168,6 +168,7 @@ main(int argc, char *argv[]) {
 	event_set(&myev, mysock, EV_READ, imsgread, NULL);
 	recvcomm(); /* Essentially just event_add */
 
+	pledge("stdio rpath wpath cpath flock", NULL);
 	event_dispatch();
 
 	exit(1);
