@@ -144,12 +144,16 @@ main(int argc, char *argv[]) {
 	struct passwd	*mypwd;
 	uid_t		 apuid;
 	gid_t		 apgid;
+	int		 flags;
 
+	debuglevel = strtonum(argv[3], 0, 50, NULL);
+	if (debuglevel >= 10)
+		sleep(60);
 	setproctitle(NULL);
 	closelog(); /* Prob not necessary */
 	log_init("authpop");
 
-	dlog(1, "entering main");
+	dlog(1, "entering main, debuglevel %d", debuglevel);
 	if ((tlsconf = tls_config_new()) == NULL)
 		lerrx(1, "tls_config_new: %s", tls_config_error(tlsconf));
 
@@ -171,7 +175,9 @@ main(int argc, char *argv[]) {
 	closefrom(4); /* Don't worry about EINTR b/c no handle sigs */
 
 	/* should |= these flags but all other opts aren't important */
-	if (fcntl(3, F_SETFL, O_NONBLOCK) == -1)
+	if ((flags = fcntl(3, F_GETFL)) == -1)
+		lerrx(1, "authpop fcntl F_GETFL");
+	if (fcntl(3, F_SETFL, flags | O_NONBLOCK) == -1)
 		lerrx(1, "could not set nonblocking unix socket");
 	imsg_init(&rootimb, 3);
 	/* get info to change to a very restricted user here; need
@@ -250,7 +256,7 @@ cleaninput(struct io *iop) {
 
 	return;
 fuckem:
-	/* XXX COME BACK TO puts */
+	/* XXX COME BACK TO (I think this is done) */
 	inputerrorarray[0] = '\0';
 	for (i = 0; i < iop->io_bufoff; ++i) {
 		snprintf(&inputerrorarray[2*i], sizeof inputerrorarray - 2i,

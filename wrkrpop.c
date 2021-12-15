@@ -114,8 +114,8 @@ static void imsgread(int, short, void *);
 static void parse_command(ssize_t, char *);
 static int getarg(size_t *, char *, ssize_t, int);
 
-/* argv[] has the following: 0-progname, 1-username,
- * 2-homedir, 3-uidstr, 4-gidstr, 5-descriptor, 6-mymaildir */
+/* argv[] has the following: 0-progname, 1-username, 2-homedir,
+ * 3-uidstr, 4-gidstr, 5-descriptor, 6-mymaildir, 7-debuglevel */
 int
 main(int argc, char *argv[]) {
 	/* These will be read from the user file in the future. */
@@ -124,10 +124,13 @@ main(int argc, char *argv[]) {
 	gid_t	mygid = 1000, tmpg; /* From argv[5] */
 	char	chrootdir[PATH_MAX], logid[8+40+1] = "wrkrpop ";
 
+	debuglevel = strtonum(argv[7], 0, 50, NULL);
+	if (debuglevel >= 10)
+		sleep(60);
 	closelog(); /* Prob not necessary */
 	strlcat(logid, argv[1], sizeof logid);
 	log_init(logid);
-	dlog(1, "entering main");
+	dlog(1, "entering main, debuglevel %d", debuglevel);
 	/* setproctitle("%s", logid); */
 	mysock = strtonum(argv[5], 3, INT_MAX, NULL);
 	if (mysock == 0)

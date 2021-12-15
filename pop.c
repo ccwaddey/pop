@@ -48,6 +48,7 @@
 char	usertab[PATH_MAX] = "/home/me/pop/testuser";
 char	authtab[PATH_MAX] = "/home/me/pop/testauth";
 char	addrname[50] = "192.168.0.9";
+char	vlevel[25];
 #define AUTHPOPFILE	"/home/me/pop/authpop"
 #define WRKRPOPFILE	"/home/me/pop/wrkrpop"
 
@@ -88,7 +89,7 @@ RB_GENERATE_STATIC(uncmp, usernode, entry, usercmp)
 
 int
 main(int argc, char *argv[]) {
-	int			set, ch;
+	int			set, ch, flags;
 	socklen_t		setl;
 	int			spv[2];
 	size_t			n;
@@ -97,9 +98,6 @@ main(int argc, char *argv[]) {
 
 	setproctitle(NULL);
 	
-	log_init("popd");
-	dlog(1, "entering main");
-
 	/* flags that we want:
 	 *
 	 * -u usertable, -a authtable, -l lsnaddr, -c certfile, -k
@@ -109,12 +107,12 @@ main(int argc, char *argv[]) {
 		case 'a':
 			n = strlcpy(authtab, optarg, sizeof authtab);
 			if (n >= sizeof authtab)
-				lerrx(1, "authtab too long");
+				errx(1, "authtab too long");
 			break;
 		case 'c':
 			n = strlcpy(certfile, optarg, sizeof certfile);
 			if (n >= sizeof certfile)
-				lerrx(1, "certfile too long");
+				errx(1, "certfile too long");
 			break;
 		case 'd':
 			daemonize = 0;
@@ -122,28 +120,28 @@ main(int argc, char *argv[]) {
 		case 'e':
 			n = strlcpy(mymaildir, optarg, sizeof mymaildir);
 			if (n >= sizeof mymaildir)
-				lerrx(1, "maildir extension too long");
+				errx(1, "maildir extension too long");
 			break;
 		case 'k':
 			n = strlcpy(keyfile, optarg, sizeof keyfile);
 			if (n >= sizeof keyfile)
-				lerrx(1, "keyfile too long");
+				errx(1, "keyfile too long");
 			break;
 		case 'l':
 			n = strlcpy(addrname, optarg, sizeof addrname);
 			if (n >= sizeof addrname)
-				lerrx(1, "addrname too long");
+				errx(1, "addrname too long");
 			break;
 		case 'u':
 			n = strlcpy(usertab, optarg, sizeof usertab);
 			if (n >= sizeof usertab)
-				lerrx(1, "usertab too long");
+				errx(1, "usertab too long");
 			break;
 		case 'v':
 			++debuglevel;
 			break;
 		default:
-			lerrx(1, "unrecognized option");
+			errx(1, "unrecognized option");
 			break;
 		}
 	}
@@ -152,11 +150,14 @@ main(int argc, char *argv[]) {
 	argv += optind;
 	
 	if (argc != 0 || *argv != NULL)
-		lerrx(1, "error processing args");
+		errx(1, "error processing args");
 
 	if (daemonize)
 		daemon(0, 0);
 
+	log_init("popd");
+	if ((snprintf(vlevel, sizeof vlevel, "%d", debuglevel)) < 0)
+		strlcpy(vlevel, "0", sizeof vlevel);
 	loadusers();
 	
 	/* This sig handling stuff gets removed on execs, because it
@@ -180,15 +181,16 @@ main(int argc, char *argv[]) {
 			_exit(1);
 
 		/* maybe more args */
-		dlog(1, "execing authpop");
-		execl(AUTHPOPFILE, "authpop", certfile, keyfile,
-		    NULL);
+		dlog(10, "execing authpop %d", getpid());
+		execl(AUTHPOPFILE, "authpop", certfile, keyfile, vlevel, NULL);
 		_exit(1);
 	} 
 
 	if (close(spv[0]))
 		lerr(1, "close");
-	if (fcntl(spv[1], F_SETFL, O_NONBLOCK) == -1)
+	if ((flags = fcntl(spv[1], F_GETFL)) == -1)
+		lerr(1, "fcntl");
+	if (fcntl(spv[1], F_SETFL, flags | O_NONBLOCK) == -1)
 		lerr(1, "fcntl");
 	imsg_init(&authimsgbuf, spv[1]);
 	event_set(&authwev, authimsgbuf.fd, EV_WRITE, authwrite, NULL);
@@ -204,6 +206,8 @@ main(int argc, char *argv[]) {
 	setl = sizeof set;
 	if (setsockopt(lsnrsd, SOL_SOCKET, SO_REUSEADDR, &set, setl))
 		lerr(1, "setsockopt");
+	if ((flags = fcntl(lsnrsd, F_GETFL)) == -1)
+		lerr(1, "fcntl lsnrsd");
 	if (fcntl(lsnrsd, F_SETFL, O_NONBLOCK) == -1)
 		lerr(1, "nonblocking");
 
@@ -286,10 +290,11 @@ authread(int fd, short event, void *arg) {
 		if ((n = imsg_get(&authimsgbuf, &rdmsg)) == -1)
 			/* Again, only legit fails b/c of malloc. */
 			lerr(1, "imsg_get");
-		if (n == 0)
+		if (n == 0) {
 			/* return is okay here instead of break b/c
 			 * the event persists. */
 			return;
+		}
 		datalen = rdmsg.hdr.len - IMSG_HEADER_SIZE;
 		
 		switch(rdmsg.hdr.type) {
@@ -401,9 +406,11 @@ checkuserpass(struct imsgauth *imap, uint32_t peerid) {
 			    " %s, %s, %s",
 			    unp->un_user, unp->un_home, unp->un_uid,
 			    unp->un_gid, descriptor, mymaildir);
+			dlog(10, "wrkrpop pid %d", getpid());
 			execl(WRKRPOPFILE, "wrkrpop",
 			    unp->un_user, unp->un_home, unp->un_uid,
-			    unp->un_gid, descriptor, mymaildir, NULL);
+			    unp->un_gid, descriptor, mymaildir,
+			    vlevel, NULL);
 			/* Shouldn't get here */
 			dlog(0, "checkuserpass: execl fail");
 			_exit(1);
