@@ -13,9 +13,9 @@ tldr: pop is picky; read on.
 
 tldr if you really don't want to read on: there are examples in the repo of how
 to do everything. The file formats are picky. You should invoke with something
-like: popd -a <authtab> -u <usertab> -l <ipv4addr> -c <certificatfile> -k
-<privatekeyfile>. You will also need to modify AUTHPOPFILE and WRKRPOPFILE to
-the locations of the authpop and wrkrpop binaries respectively. Also read the
+like: popd -a authtab -u usertab -l ipv4addr -c certificatfile -k
+privatekeyfile. You will also need to modify AUTHPOPFILE and WRKRPOPFILE to the
+locations of the authpop and wrkrpop binaries respectively. Also read the
 (short) sections on "Delivery" and "Creating the _pop3d user".
 
 ## User files
@@ -97,3 +97,15 @@ descriptors to work with.
 
 ## Logging
 
+If you want to get logging info, you'll have to set up syslog.conf. I have the following lines appended to my syslog.conf:
+
+!wrkrpop
+mail.debug	/var/log/debugmaillog
+
+!authpop
+mail.debug	/var/log/debugmaillog
+
+!popd
+mail.debug	/var/log/debugmaillog
+
+You also shouldn't add more than ten -v's because you'll get WAY too much info. Leaving it at 0, 1, or 2 -v's will be more than enough.
