@@ -3,9 +3,9 @@
 A POP3 server.
 
 This server is designed to run on OpenBSD. It is event-driven,
-privilege-separated, pledg(2)ed and unveil(2)ed and was written with security as the
-primary focus. It only supports IPv4 and maildir. It should probably have a
-better name ;).
+privilege-separated, `pledg(2)`ed and `unveil(2)`ed and was written with
+security as the primary focus. It only supports IPv4 and maildir. It should
+probably have a better name ;).
 
 # Usage
 
@@ -13,8 +13,12 @@ tldr: pop is picky; read on.
 
 tldr if you really don't want to read on: there are examples in the repo of how
 to do everything. The file formats are picky. You should invoke with something
-like: popd -a authtab -u usertab -l ipv4addr -c certificatfile -k
-privatekeyfile. You will also need to modify AUTHPOPFILE and WRKRPOPFILE to the
+like:
+
+`popd -a authtab -u usertab -l ipv4addr -c certificatfile -k
+privatekeyfile`.
+
+You will also need to modify AUTHPOPFILE and WRKRPOPFILE to the
 locations of the authpop and wrkrpop binaries respectively. Also read the
 (short) sections on "Delivery" and "Creating the _pop3d user".
 
@@ -65,8 +69,8 @@ the -c and -k options respectively.
 ## Listening address
 
 pop only supports IPv4 currently, although I should change this ASAP. Specify
-the address that pop should listen on with the -l option, e.g. -l
-192.168.0.25. You should give a numerical address, not a hostname.
+the address that pop should listen on with the `-l` option, e.g. `-l
+192.168.0.25`. You should give a numerical address, not a hostname.
 
 ## Delivery
 
@@ -75,9 +79,9 @@ testmda.c to deliver the mail with OpenSMTPD. If you would like to get debugging
 info change the line with "/home/me/pop/mdainfo" to a file on your system that
 will hold the debugging info. You can compile testmda.c with something like:
 
-cc testmda.c -o testmda -lcrypto
+`cc testmda.c -o testmda -lcrypto`
 
-Then configure OpenSMTPD to deliver mail using testmda. See smtpd.conf(5). This
+Then configure OpenSMTPD to deliver mail using testmda. See `smtpd.conf(5)`. This
 mda will work with pop by locking the popcache file (which you'll find in
 maildirs serviced by pop) to make pop more efficient and prevent duplicate file
 names for messages.
@@ -99,13 +103,13 @@ descriptors to work with.
 
 If you want to get logging info, you'll have to set up syslog.conf. I have the following lines appended to my syslog.conf:
 
-!wrkrpop
+`!wrkrpop  
 mail.debug	/var/log/debugmaillog
 
-!authpop
+!authpop  
 mail.debug	/var/log/debugmaillog
 
-!popd
-mail.debug	/var/log/debugmaillog
+!popd  
+mail.debug	/var/log/debugmaillog`
 
-You also shouldn't add more than ten -v's because you'll get WAY too much info. Leaving it at 0, 1, or 2 -v's will be more than enough.
+You also shouldn't add more than ten `-v`'s because you'll get WAY too much info. Leaving it at 0, 1, or 2 `-v`'s will be more than enough.
