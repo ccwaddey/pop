@@ -20,7 +20,7 @@ privatekeyfile`.
 
 You will also need to modify AUTHPOPFILE and WRKRPOPFILE to the
 locations of the authpop and wrkrpop binaries respectively. Also read the
-(short) sections on "Delivery" and "Creating the _pop3d user".
+(short) sections on "Delivery" and "Adding the _pop3d user".
 
 ## User files
 
@@ -37,7 +37,7 @@ with no blank lines. A username (which should consist of only lower case letters
 and digits) should be put at the start of each line and should be followed by
 one or more consecutive space or tab characters. Following the spaces/tabs there
 should be an OpenBSD hash of the user's password. This hash can be generated
-using the crypt_newhash(3) function and must use the bcrypt algorithm. The line
+using the `crypt_newhash(3)` function and must use the bcrypt algorithm. The line
 should end immediately after the hash (a newline character immediately follows
 the hash).
 
@@ -90,7 +90,7 @@ The second thing (which doesn't really relate to delivery but oh well), is that
 you should add a "senders file" if you plan on having more than one virtual
 user. This is really an OpenSMTPD thing, but if you don't want your virtual
 users sending mail as other virtual users, then you should probably read
-smtpd.conf(5) and set one of these up.
+`smtpd.conf(5)` and set one of these up.
 
 ## Adding the _pop3d user
 
@@ -103,13 +103,13 @@ descriptors to work with.
 
 If you want to get logging info, you'll have to set up syslog.conf. I have the following lines appended to my syslog.conf:
 
-`!wrkrpop  
-mail.debug	/var/log/debugmaillog
+    !wrkrpop  
+    mail.debug	/var/log/debugmaillog
 
-!authpop  
-mail.debug	/var/log/debugmaillog
+    !authpop  
+    mail.debug	/var/log/debugmaillog
 
-!popd  
-mail.debug	/var/log/debugmaillog`
+    !popd  
+    mail.debug	/var/log/debugmaillog
 
 You also shouldn't add more than ten `-v`'s because you'll get WAY too much info. Leaving it at 0, 1, or 2 `-v`'s will be more than enough.
