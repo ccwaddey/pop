@@ -3,24 +3,25 @@
 A POP3 server.
 
 This server is designed to run on OpenBSD. It is event-driven,
-privilege-separated, `pledg(2)`ed and `unveil(2)`ed and was written with
+privilege-separated, `pledge(2)`d and `unveil(2)`ed and was written with
 security as the primary focus. It only supports IPv4 and maildir. It should
-probably have a better name ;).
+probably have a better name....
 
 # Usage
 
-tldr: pop is picky; read on.
+TLDR: pop is picky; read on.
 
-tldr if you really don't want to read on: there are examples in the repo of how
-to do everything. The file formats are picky. You should invoke with something
-like:
+TLDR if you really don't want to read on: there are examples in the
+repo of how to do everything - kind of. The file formats are picky. You
+should invoke with something like:
 
-`popd -a authtab -u usertab -l ipv4addr -c certificatfile -k
+`popd -a authtab -u usertab -l ipv4addr -c certificatefile -k
 privatekeyfile`.
 
-You will also need to modify AUTHPOPFILE and WRKRPOPFILE to the
-locations of the authpop and wrkrpop binaries respectively. Also read the
-(short) sections on "Delivery" and "Adding the _pop3d user".
+You will also need to modify the lines `#define AUTHPOPFILE` and
+`#define WRKRPOPFILE` in `pop.c` to the locations of the authpop and wrkrpop
+binaries respectively. Also read the (short) sections on
+[Delivery](#delivery) and [Adding the `_pop3d` user](#popd).
 
 ## User files
 
@@ -72,7 +73,7 @@ pop only supports IPv4 currently, although I should change this ASAP. Specify
 the address that pop should listen on with the `-l` option, e.g. `-l
 192.168.0.25`. You should give a numerical address, not a hostname.
 
-## Delivery
+## Delivery {#delivery}
 
 There are two main issues to cover here. The first is that you should use
 testmda.c to deliver the mail with OpenSMTPD. If you would like to get debugging
@@ -92,9 +93,9 @@ user. This is really an OpenSMTPD thing, but if you don't want your virtual
 users sending mail as other virtual users, then you should probably read
 `smtpd.conf(5)` and set one of these up.
 
-## Adding the _pop3d user
+## Adding the `_pop3d` user {#popd}
 
-authpop.c expects there to be a _pop3d user that it can switch to for privilege
+authpop.c expects there to be a `_pop3d` user that it can switch to for privilege
 dropping. You should add one, and preferably make /var/empty its home dir and
 don't allow logins and create a login class that gives it plenty of open file
 descriptors to work with.
