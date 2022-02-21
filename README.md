@@ -1,11 +1,12 @@
 # POP
 
-A POP3 server.
+A POP3 server. Not completed yet (I found a major bug in testing that
+I haven't fixed yet).
 
 This server is designed to run on OpenBSD. It is event-driven,
 privilege-separated, `pledge(2)`d and `unveil(2)`ed and was written with
 security as the primary focus. It only supports IPv4 and maildir. It should
-probably have a better name....
+probably have a better name...
 
 # Usage
 
